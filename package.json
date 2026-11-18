@@ -4,11 +4,13 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file=.env src/server.js",
-    "dev": "node --watch --env-file=.env src/server.js"
+    "dev": "node --watch --env-file=.env src/server.js",
+    "docs:build": "node scripts/build-docs-site.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.0.0",
+    "express-rate-limit": "^8.7.4",
     "helmet": "^8.0.0",
     "morgan": "^1.10.0",
     "pg": "^8.11.0"

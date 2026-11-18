@@ -1,3 +1,11 @@
+-- ============================================================================
+-- seed.sql  -  sample data so the API has something to return.
+-- Run AFTER schema.sql:  psql -d foodnow_db -f sql/seed.sql
+-- ids are generated automatically (1, 2, 3...), so menu_items below refer to
+-- restaurants 1, 2, 3 in the order they were inserted.
+-- ============================================================================
+
+-- Restaurant 3 is closed on purpose, to test the "Restaurant is closed" error.
 INSERT INTO restaurants (name, cuisine, delivery_fee, is_open) VALUES
   ('Koshary El Tahrir', 'egyptian', 15.00, true),
   ('Pizza Corner',      'italian',  20.00, true),

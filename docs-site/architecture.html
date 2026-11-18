@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FoodNow architecture</title><style>
+  :root { font: 16px/1.6 system-ui, sans-serif; color: #17212b; background: #f4f7f9; }
+  body { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  nav a { margin-right: 1rem; }
+  h1, h2 { line-height: 1.2; } h2 { margin-top: 2.5rem; }
+  .muted { color: #526170; }
+  section, .endpoint { background: #fff; border: 1px solid #dce3e8; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .endpoint h3 { margin: 0 0 .5rem; }
+  code { font-family: ui-monospace, Menlo, monospace; }
+  pre { overflow-x: auto; padding: 1rem; border-radius: 6px; background: #17212b; color: #f4f7f9; }
+  .method { display: inline-block; min-width: 4.5rem; font-weight: 700; color: #075e54; }
+  .mermaid { text-align: center; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #dce3e8; vertical-align: top; }
+  @media (max-width: 600px) { body { padding: 1rem .75rem 3rem; } }</style>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "default" });
+  </script>
+</head><body>
+  <nav><a href="index.html">Getting started</a><a href="api.html">API reference</a><a href="architecture.html">Architecture &amp; diagrams</a></nav>
+  
+    <h1>Architecture &amp; diagrams</h1>
+    <p class="muted">Start at the top and read down: structure, request flow, data model, then the key use cases.</p>
+    <section><h2>Folder structure</h2><pre>food-now/
+├─ sql/
+│  ├─ schema.sql            tables, constraints, indexes
+│  └─ seed.sql              sample data
+└─ src/
+   ├─ server.js             start: check DB, listen, graceful shutdown
+   ├─ app.js                build Express app: middleware + routes
+   ├─ db.js                 pg pool + withTransaction()
+   ├─ config/env.js         read/validate environment variables
+   ├─ constants/            order statuses + allowed transitions
+   ├─ routes/               URL -&gt; validation -&gt; controller
+   ├─ controllers/          HTTP in/out only (no SQL, no rules)
+   ├─ services/             business rules + SQL
+   ├─ middleware/           validate.js, errorHandler.js
+   ├─ utils/                AppError, asyncHandler, money helpers
+   └─ docs/                 this documentation (diagrams + pages)</pre></section>
+    
+    <section id="structure">
+      <h2>1. Project structure (layers)</h2>
+      <p class="muted">Each layer has one job and only talks to the layer below it. Routes never touch the database; services never touch req/res.</p>
+      <pre class="mermaid">flowchart TB
+  Client([Client / curl / mobile app])
+  subgraph Express["Express app (src/app.js)"]
+    MW["Global middleware&lt;br/&gt;helmet, cors, morgan, json parser"]
+    Routes["Routes (src/routes)&lt;br/&gt;URL + validation + which controller"]
+    Val["Validation middleware&lt;br/&gt;(src/middleware/validate.js)"]
+    Ctrl["Controllers (src/controllers)&lt;br/&gt;read req, call service, send res"]
+    Svc["Services (src/services)&lt;br/&gt;business rules + SQL"]
+    Err["Error handler&lt;br/&gt;(src/middleware/errorHandler.js)"]
+  end
+  DB[("PostgreSQL&lt;br/&gt;src/db.js pool")]
+  Client --&gt; MW --&gt; Routes --&gt; Val --&gt; Ctrl --&gt; Svc --&gt; DB
+  Val -. AppError .-&gt; Err
+  Svc -. AppError .-&gt; Err
+  Err -. JSON error .-&gt; Client</pre>
+      
+    </section>
+    <section id="flow">
+      <h2>2. Request lifecycle (flowchart)</h2>
+      <p class="muted">What happens to every request, including the failure paths.</p>
+      <pre class="mermaid">flowchart TD
+  A[Request arrives] --&gt; B{Route matches?}
+  B -- no --&gt; NF[notFound -&gt; 404]
+  B -- yes --&gt; C{Validation passes?}
+  C -- no --&gt; V[AppError 400 + details]
+  C -- yes --&gt; D[Controller calls service]
+  D --&gt; E{Business rules OK?}
+  E -- no --&gt; F[AppError 400 / 404 / 409]
+  E -- yes --&gt; G[SQL query / transaction]
+  G --&gt; H[Response JSON 200 / 201]
+  NF --&gt; ERR[errorHandler]
+  V --&gt; ERR
+  F --&gt; ERR
+  ERR --&gt; R[Error JSON to client]</pre>
+      
+    </section>
+    <section id="erd">
+      <h2>3. Database ERD</h2>
+      <p class="muted">unit_price is copied into order_items on purpose: later menu price changes must not change old orders.</p>
+      <pre class="mermaid">erDiagram
+  RESTAURANTS ||--o{ MENU_ITEMS : "has"
+  RESTAURANTS ||--o{ ORDERS : "receives"
+  ORDERS ||--|{ ORDER_ITEMS : "contains"
+  MENU_ITEMS ||--o{ ORDER_ITEMS : "ordered as"
+
+  RESTAURANTS {
+    serial id PK
+    varchar name
+    varchar cuisine
+    numeric delivery_fee
+    boolean is_open
+  }
+  MENU_ITEMS {
+    serial id PK
+    int restaurant_id FK
+    varchar name
+    numeric price "CHECK &gt;= 0"
+    boolean is_available
+  }
+  ORDERS {
+    serial id PK
+    int restaurant_id FK
+    varchar customer_name
+    text address
+    varchar status "pending|preparing|on_the_way|delivered|cancelled"
+    numeric total
+    timestamptz created_at
+  }
+  ORDER_ITEMS {
+    serial id PK
+    int order_id FK
+    int menu_item_id FK
+    int quantity "CHECK &gt; 0"
+    numeric unit_price "price snapshot"
+  }</pre>
+      
+    </section>
+    <section id="sequence-create-order">
+      <h2>4. Sequence: POST /api/v1/orders</h2>
+      <p class="muted">The most important flow. Everything inside the transaction succeeds or nothing is saved.</p>
+      <pre class="mermaid">sequenceDiagram
+  autonumber
+  actor C as Client
+  participant R as Route + validate()
+  participant K as Controller
+  participant S as orders.service
+  participant DB as PostgreSQL
+  C-&gt;&gt;R: POST /orders {restaurantId, customerName, address, items}
+  alt invalid body
+    R--&gt;&gt;C: 400 Validation failed
+  end
+  R-&gt;&gt;K: create(req, res)
+  K-&gt;&gt;S: createOrder(body)
+  S-&gt;&gt;DB: BEGIN
+  S-&gt;&gt;DB: SELECT restaurant
+  alt missing or closed
+    S-&gt;&gt;DB: ROLLBACK
+    S--&gt;&gt;C: 404 / 400 (via errorHandler)
+  end
+  S-&gt;&gt;DB: SELECT prices of requested items (available, this restaurant)
+  Note over S: Prices come from the DB, never from the client
+  alt some item invalid
+    S-&gt;&gt;DB: ROLLBACK
+    S--&gt;&gt;C: 400 with menuItemIds
+  end
+  Note over S: total = sum(price x qty) + delivery_fee
+  S-&gt;&gt;DB: INSERT order
+  S-&gt;&gt;DB: INSERT order_items (bulk)
+  S-&gt;&gt;DB: COMMIT
+  S-&gt;&gt;DB: SELECT order + items
+  S--&gt;&gt;K: order
+  K--&gt;&gt;C: 201 Created {order}</pre>
+      
+    </section>
+    <section id="sequence-update-status">
+      <h2>5. Sequence: PATCH /api/v1/orders/:id/status</h2>
+      <p class="muted">Row is locked while the transition rule is checked, so concurrent updates cannot corrupt the status.</p>
+      <pre class="mermaid">sequenceDiagram
+  autonumber
+  actor C as Client
+  participant K as Controller
+  participant S as orders.service
+  participant DB as PostgreSQL
+  C-&gt;&gt;K: PATCH /orders/7/status {status}
+  K-&gt;&gt;S: updateStatus(7, status)
+  S-&gt;&gt;DB: BEGIN
+  S-&gt;&gt;DB: SELECT status FROM orders WHERE id=7 FOR UPDATE
+  alt not found
+    S--&gt;&gt;C: 404
+  else transition not allowed
+    S-&gt;&gt;DB: ROLLBACK
+    S--&gt;&gt;C: 409 Conflict {allowed: [...]}
+  else allowed
+    S-&gt;&gt;DB: UPDATE orders SET status
+    S-&gt;&gt;DB: COMMIT
+    S--&gt;&gt;C: 200 {order}
+  end</pre>
+      
+    </section>
+    <section id="order-status">
+      <h2>6. Order status state machine</h2>
+      <p class="muted">Generated from src/constants/orderStatus.js, so it can never drift from the code.</p>
+      <pre class="mermaid">stateDiagram-v2
+  [*] --&gt; pending
+  pending --&gt; preparing
+  pending --&gt; cancelled
+  preparing --&gt; on_the_way
+  preparing --&gt; cancelled
+  on_the_way --&gt; delivered
+  delivered --&gt; [*]
+  cancelled --&gt; [*]</pre>
+      
+    </section>
+</body></html>

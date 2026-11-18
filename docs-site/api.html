@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FoodNow API documentation</title><style>
+  :root { font: 16px/1.6 system-ui, sans-serif; color: #17212b; background: #f4f7f9; }
+  body { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  nav a { margin-right: 1rem; }
+  h1, h2 { line-height: 1.2; } h2 { margin-top: 2.5rem; }
+  .muted { color: #526170; }
+  section, .endpoint { background: #fff; border: 1px solid #dce3e8; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .endpoint h3 { margin: 0 0 .5rem; }
+  code { font-family: ui-monospace, Menlo, monospace; }
+  pre { overflow-x: auto; padding: 1rem; border-radius: 6px; background: #17212b; color: #f4f7f9; }
+  .method { display: inline-block; min-width: 4.5rem; font-weight: 700; color: #075e54; }
+  .mermaid { text-align: center; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #dce3e8; vertical-align: top; }
+  @media (max-width: 600px) { body { padding: 1rem .75rem 3rem; } }</style>
+</head><body>
+  <nav><a href="index.html">Getting started</a><a href="api.html">API reference</a><a href="architecture.html">Architecture &amp; diagrams</a></nav>
+  
+    <h1>FoodNow API</h1>
+    <p class="muted">Version 1 · Base path: <code>/api/v1</code></p>
+    <p>Browse restaurants and menus, place orders, and track order status. All responses are JSON except the <code>/doc</code> pages.</p>
+
+    <h2>Health and documentation</h2>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/health</code></h3><p>Is the API process alive?</p><pre>{"status":"ok"}</pre></div>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/doc</code></h3><p>This API reference.</p></div>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/doc/guide</code></h3><p>Getting started: setup, env vars, request flow, code tour, troubleshooting.</p></div>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/doc/architecture</code></h3><p>Project structure, request flow, ERD and sequence diagrams (rendered).</p></div>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/doc/diagrams</code></h3><p>JSON list of all diagrams with their Mermaid source.</p></div>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/doc/diagrams/:name</code></h3><p>Raw Mermaid text of one diagram. Names: <code>structure</code>, <code>flow</code>, <code>erd</code>, <code>sequence-create-order</code>, <code>sequence-update-status</code>, <code>order-status</code>.</p></div>
+
+    <h2>Restaurants</h2>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/api/v1/restaurants</code></h3>
+      <p>Optional query: <code>cuisine</code> (case-insensitive), <code>open=true</code>, <code>q</code> (name contains). Response: <code>{ total, data }</code>.</p></div>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/api/v1/restaurants/:id</code></h3><p>One restaurant. 404 if missing.</p></div>
+    <div class="endpoint"><h3><span class="method">POST</span><code>/api/v1/restaurants</code></h3>
+      <pre>{ "name": "Burger Hub", "cuisine": "american", "deliveryFee": 18, "isOpen": true }</pre>
+      <p><code>name</code> and <code>cuisine</code> required; <code>deliveryFee</code> (default 0) and <code>isOpen</code> (default true) optional. Returns 201.</p></div>
+    <div class="endpoint"><h3><span class="method">PATCH</span><code>/api/v1/restaurants/:id</code></h3>
+      <pre>{ "isOpen": false }</pre>
+      <p>Send any of <code>name</code>, <code>cuisine</code>, <code>deliveryFee</code>, <code>isOpen</code> (at least one). Only the fields you send change.</p></div>
+    <div class="endpoint"><h3><span class="method">DELETE</span><code>/api/v1/restaurants/:id</code></h3>
+      <p>Deletes the restaurant and its menu. Returns 204. Returns 409 if the restaurant already has orders.</p></div>
+
+    <h2>Menu</h2>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/api/v1/restaurants/:id/menu</code></h3><p>Available menu items. Response: <code>{ data }</code>. 404 if the restaurant is missing.</p></div>
+    <div class="endpoint"><h3><span class="method">POST</span><code>/api/v1/restaurants/:id/menu</code></h3>
+      <pre>{ "name": "Falafel Wrap", "price": 35, "isAvailable": true }</pre>
+      <p>Adds a dish. <code>name</code> and <code>price</code> required. Returns 201.</p></div>
+    <div class="endpoint"><h3><span class="method">PATCH</span><code>/api/v1/menu-items/:id</code></h3>
+      <pre>{ "price": 50, "isAvailable": false }</pre>
+      <p>Change <code>name</code>, <code>price</code> or <code>isAvailable</code> (mark sold out). Old orders keep the price they were placed with.</p></div>
+
+    <h2>Orders</h2>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/api/v1/orders</code></h3>
+      <p>Lists orders, newest first. Optional query: <code>status</code>, <code>restaurantId</code>, <code>limit</code> (default 20, max 100), <code>offset</code> (default 0).</p>
+      <p>Response: <code>{ total, limit, offset, data }</code>, where <code>total</code> counts all matches (for page buttons).</p></div>
+    <div class="endpoint"><h3><span class="method">POST</span><code>/api/v1/orders</code></h3>
+      <p>Places an order at an open restaurant. Prices are calculated by the API, never taken from the client.</p>
+      <pre>{
+  "restaurantId": 1,
+  "customerName": "Sara",
+  "address": "12 Tahrir St, Giza",
+  "items": [ { "menuItemId": 1, "quantity": 2 }, { "menuItemId": 3, "quantity": 1 } ]
+}</pre>
+      <p>201 with the created order. 400 for validation errors, closed restaurant or unavailable items. 404 if the restaurant is missing.</p></div>
+    <div class="endpoint"><h3><span class="method">GET</span><code>/api/v1/orders/:id</code></h3><p>Order with its items. 404 if missing.</p></div>
+    <div class="endpoint"><h3><span class="method">PATCH</span><code>/api/v1/orders/:id/status</code></h3>
+      <pre>{ "status": "preparing" }</pre>
+      <p>Only valid transitions are allowed (see the state diagram on the architecture page). An invalid move returns 409 with the allowed statuses.</p></div>
+    <div class="endpoint"><h3><span class="method">POST</span><code>/api/v1/orders/:id/cancel</code></h3>
+      <p>Cancels an order (no body). Same rules as status changes: only <code>pending</code> or <code>preparing</code> orders can be cancelled, otherwise 409.</p></div>
+
+    <h2>Errors</h2>
+    <pre>{ "error": "Validation failed", "details": ["customerName: must be a non-empty string"] }</pre>
+</body></html>
